@@ -45,6 +45,12 @@ public class TestableBuffer
     }
 
     @Override
+    public String bufferType()
+    {
+        return "test";
+    }
+
+    @Override
     protected void closeInternal(Sender sender)
             throws IOException
     {

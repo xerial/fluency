@@ -50,6 +50,8 @@ public abstract class Buffer<T extends Buffer.Config>
     public abstract void flushInternal(Sender sender, boolean force)
             throws IOException;
 
+    public abstract String bufferType();
+
     public void close(Sender sender)
             throws IOException
     {
@@ -75,6 +77,7 @@ public abstract class Buffer<T extends Buffer.Config>
     {
         protected long maxBufferSize = 512 * 1024 * 1024;
         protected boolean ackResponseMode = false;
+        protected String fileBackupDir;
 
         public long getMaxBufferSize()
         {
@@ -98,12 +101,24 @@ public abstract class Buffer<T extends Buffer.Config>
             return (C)this;
         }
 
+        public String getFileBackupDir()
+        {
+            return fileBackupDir;
+        }
+
+        public C setFileBackupDir(String fileBackupDir)
+        {
+            this.fileBackupDir = fileBackupDir;
+            return (C) this;
+        }
+
         @Override
         public String toString()
         {
             return "Config{" +
                     "maxBufferSize=" + maxBufferSize +
                     ", ackResponseMode=" + ackResponseMode +
+                    ", fileBackupDir='" + fileBackupDir + '\'' +
                     '}';
         }
 

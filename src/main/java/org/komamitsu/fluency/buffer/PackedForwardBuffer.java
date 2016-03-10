@@ -21,6 +21,7 @@ import java.util.concurrent.atomic.AtomicLong;
 public class PackedForwardBuffer
     extends Buffer<PackedForwardBuffer.Config>
 {
+    public static final String FORMAT_TYPE = "packed_forward";
     private static final Logger LOG = LoggerFactory.getLogger(PackedForwardBuffer.class);
     private final Map<String, RetentionBuffer> retentionBuffers = new HashMap<String, RetentionBuffer>();
     private final LinkedBlockingQueue<TaggableBuffer> flushableBuffers = new LinkedBlockingQueue<TaggableBuffer>();
@@ -122,6 +123,12 @@ public class PackedForwardBuffer
         catch (InterruptedException e) {
             throw new IOException("Failed to move retention buffer due to interruption", e);
         }
+    }
+
+    @Override
+    public String bufferType()
+    {
+        return FORMAT_TYPE;
     }
 
     @Override

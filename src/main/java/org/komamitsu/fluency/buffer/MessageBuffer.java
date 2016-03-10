@@ -19,6 +19,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 public class MessageBuffer
     extends Buffer<MessageBuffer.Config>
 {
+    public static final String FORMAT_TYPE = "message";
     private static final Logger LOG = LoggerFactory.getLogger(MessageBuffer.class);
     private final AtomicInteger allocatedSize = new AtomicInteger();
     private final LinkedBlockingQueue<ByteBuffer> messages = new LinkedBlockingQueue<ByteBuffer>();
@@ -59,6 +60,12 @@ public class MessageBuffer
             messages.add(byteBuffer);
             allocatedSize.getAndAdd(packedBytes.length);
         }
+    }
+
+    @Override
+    public String bufferType()
+    {
+        return FORMAT_TYPE;
     }
 
     @Override
