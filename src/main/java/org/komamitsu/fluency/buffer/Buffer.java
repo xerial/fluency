@@ -62,6 +62,18 @@ public abstract class Buffer<T extends Buffer.Config>
 
     protected abstract void loadBuffer(List<String> params, ByteBuffer buffer);
 
+    protected abstract void saveAllBuffers()
+            throws IOException;
+
+    protected void saveBuffer(List<String> params, ByteBuffer buffer)
+    {
+        if (fileBackup == null) {
+            return;
+        }
+
+        fileBackup.saveBuffer(params, buffer);
+    }
+
     public void flush(Sender sender, boolean force)
             throws IOException
     {

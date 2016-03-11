@@ -31,6 +31,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.Assert.*;
 
@@ -341,7 +342,7 @@ public class FluencyTest
                 Flusher.Config flusherConfig = new AsyncFlusher.Config();
                 return new Fluency.Builder(sender).setBufferConfig(bufferConfig).setFlusherConfig(flusherConfig).build();
             }
-        }, true);
+        }, true, false);
     }
 
     @Test
@@ -360,7 +361,7 @@ public class FluencyTest
                 Flusher.Config flusherConfig = new SyncFlusher.Config();
                 return new Fluency.Builder(sender).setBufferConfig(bufferConfig).setFlusherConfig(flusherConfig).build();
             }
-        }, true);
+        }, true, false);
     }
 
     @Test
@@ -415,7 +416,7 @@ public class FluencyTest
                 Flusher.Config flusherConfig = new AsyncFlusher.Config();
                 return new Fluency.Builder(sender).setBufferConfig(bufferConfig).setFlusherConfig(flusherConfig).build();
             }
-        }, true);
+        }, true, false);
     }
 
     @Test
@@ -434,21 +435,39 @@ public class FluencyTest
                 Flusher.Config flusherConfig = new SyncFlusher.Config();
                 return new Fluency.Builder(sender).setBufferConfig(bufferConfig).setFlusherConfig(flusherConfig).build();
             }
-        }, true);
+        }, true, false);
+    }
+
+    @Test
+    public void testFluencyUsingPackedForwardBufferAndAsyncFlusherWithFileBackup()
+            throws Exception
+    {
+        testFluencyBase(new FluencyFactory() {
+            @Override
+            public Fluency generate(List<Integer> localPorts)
+                    throws IOException
+            {
+                int fluentdPort = localPorts.get(0);
+                Sender sender = getSingleTCPSender(fluentdPort);
+                Buffer.Config bufferConfig = new PackedForwardBuffer.Config().setFileBackupDir(System.getProperty("java.io.tmpdir"));
+                Flusher.Config flusherConfig = new AsyncFlusher.Config();
+                return new Fluency.Builder(sender).setBufferConfig(bufferConfig).setFlusherConfig(flusherConfig).build();
+            }
+        }, false, false /* FIXME: Should turn on this flag */);
     }
 
     private void testFluencyBase(FluencyFactory fluencyFactory)
             throws Exception
     {
-        testFluencyBase(fluencyFactory, false);
+        testFluencyBase(fluencyFactory, false, false);
     }
 
-    private void testFluencyBase(FluencyFactory fluencyFactory, final boolean testFailover)
+    private void testFluencyBase(final FluencyFactory fluencyFactory, final boolean testFailover, final boolean testFileBackup)
             throws Exception
     {
-        ArrayList<Integer> localPorts = new ArrayList<Integer>();
+        final ArrayList<Integer> localPorts = new ArrayList<Integer>();
 
-        MockFluentdServer fluentd = new MockFluentdServer();
+        final MockFluentdServer fluentd = new MockFluentdServer();
         fluentd.start();
         TimeUnit.MILLISECONDS.sleep(200);
         localPorts.add(fluentd.getLocalPort());
@@ -458,7 +477,7 @@ public class FluencyTest
         TimeUnit.MILLISECONDS.sleep(200);
         localPorts.add(secondaryFluentd.getLocalPort());
 
-        final Fluency fluency = fluencyFactory.generate(localPorts);
+        final AtomicReference<Fluency> fluency = new AtomicReference<Fluency>(fluencyFactory.generate(localPorts));
 
         final int maxNameLen = 200;
         final HashMap<Integer, String> nameLenTable = new HashMap<Integer, String>(maxNameLen);
@@ -484,6 +503,11 @@ public class FluencyTest
             long start = System.currentTimeMillis();
             final CountDownLatch latch = new CountDownLatch(concurrency);
             final AtomicBoolean shouldFailOver = new AtomicBoolean(true);
+
+            final AtomicBoolean shouldStopFluentd = new AtomicBoolean(true);
+            final AtomicBoolean shouldStopFluency = new AtomicBoolean(true);
+            final CountDownLatch closeWaitLatch = new CountDownLatch(concurrency);
+
             ExecutorService es = Executors.newCachedThreadPool();
             for (int i = 0; i < concurrency; i++) {
                 es.execute(new Runnable()
@@ -502,6 +526,52 @@ public class FluencyTest
                                         catch (IOException e) {
                                             LOG.warn("Failed to stop secondary fluentd", e);
                                         }
+                                    }
+                                }
+                            }
+                            else if (testFileBackup) {
+                                if (i == reqNum / 4) {
+                                    if (shouldStopFluentd.getAndSet(false)) {
+                                        LOG.info("Stopping Fluentd...");
+                                        try {
+                                            fluentd.stop();
+                                            secondaryFluentd.stop();
+                                        }
+                                        catch (IOException e) {
+                                            LOG.warn("Failed to stop Fluentd", e);
+                                        }
+                                    }
+                                }
+                                else if (i == reqNum / 2) {
+                                    if (shouldStopFluency.getAndSet(false)) {
+                                        LOG.info("Stopping Fluency...");
+                                        try {
+                                            fluency.get().close();
+                                            TimeUnit.SECONDS.sleep(2);
+                                        }
+                                        catch (Exception e) {
+                                            LOG.warn("Failed to stop Fluency", e);
+                                        }
+
+                                        LOG.info("Restarting Fluentd...");
+                                        try {
+                                            fluentd.start();
+                                            secondaryFluentd.start();
+                                            TimeUnit.MILLISECONDS.sleep(200);
+                                            LOG.info("Restarting Fluency...");
+                                            fluency.set(fluencyFactory.generate(Arrays.asList(fluentd.getLocalPort(), secondaryFluentd.getLocalPort())));
+                                            TimeUnit.SECONDS.sleep(2);
+                                        }
+                                        catch (Exception e) {
+                                            LOG.warn("Failed to restart Fluentd", e);
+                                        }
+                                    }
+                                    closeWaitLatch.countDown();
+                                    try {
+                                        assertTrue(closeWaitLatch.await(20, TimeUnit.SECONDS));
+                                    }
+                                    catch (InterruptedException e) {
+                                        LOG.warn("Interrupted", e);
                                     }
                                 }
                             }
@@ -539,7 +609,7 @@ public class FluencyTest
                                 BufferFullException exception = null;
                                 for (int retry = 0; retry < 10; retry++) {
                                     try {
-                                        fluency.emit(tag, hashMap);
+                                        fluency.get().emit(tag, hashMap);
                                         exception = null;
                                         break;
                                     }
@@ -573,7 +643,7 @@ public class FluencyTest
             }
             assertEquals(0, latch.getCount());
 
-            fluency.flush();
+            fluency.get().flush();
             for (int i = 0; i < 20; i++) {
                 if (fluentd.ageEventsCounter.get() == (long)concurrency * reqNum) {
                     break;
@@ -600,7 +670,7 @@ public class FluencyTest
 
             System.out.println(System.currentTimeMillis() - start);
         } finally {
-            fluency.close();
+            fluency.get().close();
             fluentd.stop();
             secondaryFluentd.stop();
         }

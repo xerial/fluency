@@ -90,31 +90,29 @@ public class PackedForwardBuffer
     @Override
     protected void loadBuffer(List<String> params, ByteBuffer buffer)
     {
-        if (params.size() != 3) {
-            throw new IllegalArgumentException("The number of params should be 3: params=" + params);
+        if (params.size() != 1) {
+            throw new IllegalArgumentException("The number of params should be 1: params=" + params);
         }
-        String bufferType = params.get(0);
-        String tag = params.get(1);
-        // params.get(2) is timestamp
+        String tag = params.get(0);
 
-        if (bufferType.equals("0")) {   // 0: flushableBuffers
-            try {
-                loadDataToFlushableBuffers(tag, buffer);
-            }
-            catch (Exception e) {
-                LOG.error("Failed to load data to flushableBuffers: params={}, buffer={}", params, buffer);
-            }
+        try {
+            loadDataToFlushableBuffers(tag, buffer);
         }
-        else if (bufferType.equals("1")) {  // 1: retentionBuffers
-            try {
-                loadDataToRetentionBuffers(tag, buffer);
-            }
-            catch (Exception e) {
-                LOG.error("Failed to load data to retentionBuffers: params={}, buffer={}", params, buffer);
-            }
+        catch (Exception e) {
+            LOG.error("Failed to load data to flushableBuffers: params={}, buffer={}", params, buffer);
         }
-        else {
-            LOG.error("Unexpected bufferType: params={}, buffer={}", params, buffer);
+    }
+
+    @Override
+    protected void saveAllBuffers()
+            throws IOException
+    {
+        // TODO : Lock Buffer safely
+        moveRetentionBuffersToFlushable(true);  // Just in case
+
+        TaggableBuffer flushableBuffer = null;
+        while ((flushableBuffer = flushableBuffers.poll()) != null) {
+            saveBuffer(Arrays.asList(flushableBuffer.getTag()), flushableBuffer.getByteBuffer());
         }
     }
 

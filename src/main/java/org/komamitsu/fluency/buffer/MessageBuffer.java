@@ -11,6 +11,7 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -69,16 +70,25 @@ public class MessageBuffer
     @Override
     protected void loadBuffer(List<String> params, ByteBuffer buffer)
     {
-        if (params.size() != 1) {
-            throw new IllegalArgumentException("The number of params should be 1: params=" + params);
+        if (params.size() != 0) {
+            throw new IllegalArgumentException("The number of params should be 0: params=" + params);
         }
-        // params.get(0) is timestamp
 
         try {
             loadDataToMessages(buffer);
         }
         catch (Exception e) {
             LOG.error("Failed to load data to messages: params={}, buffer={}", params, buffer);
+        }
+    }
+
+    @Override
+    protected void saveAllBuffers()
+            throws IOException
+    {
+        ByteBuffer message = null;
+        while ((message = messages.poll()) != null) {
+            saveBuffer(Collections.EMPTY_LIST, message);
         }
     }
 

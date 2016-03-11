@@ -30,6 +30,12 @@ public class TestableBuffer
     }
 
     @Override
+    protected void saveAllBuffers()
+            throws IOException
+    {
+    }
+
+    @Override
     public void append(String tag, long timestamp, Map data)
             throws IOException
     {

@@ -5,11 +5,13 @@ import org.slf4j.LoggerFactory;
 
 import java.io.Closeable;
 import java.io.File;
+import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.RandomAccessFile;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -17,6 +19,8 @@ import java.util.regex.Pattern;
 public class FileBackup
 {
     private static final Logger LOG = LoggerFactory.getLogger(FileBackup.class);
+    private static final String PARAM_DELIM_IN_FILENAME = "#";
+    private static final String EXT_FILENAME = ".buf";
     private final File backupDir;
     private final Buffer buffer;
     private final Pattern pattern;
@@ -89,7 +93,18 @@ public class FileBackup
     {
         this.backupDir = backupDir;
         this.buffer = buffer;
-        this.pattern = Pattern.compile(buffer.bufferFormatType() + "#([\\w#]+\\).buf");
+        this.pattern = Pattern.compile(buffer.bufferFormatType() + PARAM_DELIM_IN_FILENAME + "([\\w" + PARAM_DELIM_IN_FILENAME + "]+)" + EXT_FILENAME);
+        LOG.debug(this.toString());
+    }
+
+    @Override
+    public String toString()
+    {
+        return "FileBackup{" +
+                "backupDir=" + backupDir +
+                ", buffer=" + buffer +
+                ", pattern=" + pattern +
+                '}';
     }
 
     public List<SavedBuffer> getSavedFiles()
@@ -99,13 +114,57 @@ public class FileBackup
         for (File f : files) {
             Matcher matcher = pattern.matcher(f.getName());
             if (matcher.find()) {
-                List<String> params = new ArrayList<String>(matcher.groupCount());
-                for (int i = 0; i < matcher.groupCount(); i++) {
-                    params.add(matcher.group(i + 1));
+                if (matcher.groupCount() != 1) {
+                    LOG.warn("Invalid backup filename: file={}", f.getName());
                 }
-                savedBuffers.add(new SavedBuffer(f, params));
+                else {
+                    String concatParams = matcher.group(1);
+                    String[] params = concatParams.split(PARAM_DELIM_IN_FILENAME);
+                    List<String> paramList = Arrays.asList(params);
+                    paramList.remove(paramList.size() - 1);
+                    savedBuffers.add(new SavedBuffer(f, paramList));
+                }
             }
         }
         return savedBuffers;
+    }
+
+    public void saveBuffer(List<String> params, ByteBuffer buffer)
+    {
+        backupDir.mkdir();
+        params.add(String.valueOf(System.currentTimeMillis()));
+
+        boolean isFirst = true;
+        StringBuilder sb = new StringBuilder();
+        for (String param : params) {
+            if (isFirst) {
+                isFirst = false;
+            }
+            else {
+                sb.append(PARAM_DELIM_IN_FILENAME);
+            }
+            sb.append(param);
+        }
+        String filename = this.buffer.bufferFormatType() + PARAM_DELIM_IN_FILENAME + sb.toString() + EXT_FILENAME;
+
+        File file = new File(backupDir, filename);
+        FileChannel channel = null;
+        try {
+            channel = new FileOutputStream(file).getChannel();
+            channel.write(buffer);
+        }
+        catch (Exception e) {
+            LOG.error("Failed to save buffer to file: params=" + params + ", path=" + file.getAbsolutePath() + ", buffer=" + buffer, e);
+        }
+        finally {
+            if (channel != null) {
+                try {
+                    channel.close();
+                }
+                catch (IOException e) {
+                    LOG.warn("Failed to close Channel: channel=" + channel);
+                }
+            }
+        }
     }
 }
