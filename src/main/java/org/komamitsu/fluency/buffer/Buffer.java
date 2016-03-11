@@ -7,8 +7,12 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.ByteArrayOutputStream;
+import java.io.File;
 import java.io.IOException;
+import java.nio.ByteBuffer;
 import java.nio.charset.Charset;
+import java.util.Arrays;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -31,14 +35,32 @@ public abstract class Buffer<T extends Buffer.Config>
             return new ByteArrayOutputStream();
         }
     };
+    protected final FileBackup fileBackup;
 
     public Buffer(T bufferConfig)
     {
         this.bufferConfig = bufferConfig;
+        if (bufferConfig.getFileBackupDir() != null) {
+            fileBackup = new FileBackup(new File(bufferConfig.getFileBackupDir()), this);
+            for (FileBackup.SavedBuffer savedBuffer : fileBackup.getSavedFiles()) {
+                savedBuffer.open(new FileBackup.SavedBuffer.Callback() {
+                    @Override
+                    public void process(List<String> params, ByteBuffer buffer)
+                    {
+                        loadBuffer(params, buffer);
+                    }
+                });
+            }
+        }
+        else {
+            fileBackup = null;
+        }
     }
 
     public abstract void append(String tag, long timestamp, Map<String, Object> data)
             throws IOException;
+
+    protected abstract void loadBuffer(List<String> params, ByteBuffer buffer);
 
     public void flush(Sender sender, boolean force)
             throws IOException
@@ -47,19 +69,17 @@ public abstract class Buffer<T extends Buffer.Config>
         flushInternal(sender, force);
     }
 
-    public abstract void flushInternal(Sender sender, boolean force)
+    protected abstract void flushInternal(Sender sender, boolean force)
             throws IOException;
 
-    public abstract String bufferType();
+    public abstract String bufferFormatType();
 
-    public void close(Sender sender)
-            throws IOException
+    public void close()
     {
-        closeInternal(sender);
+        closeInternal();
     }
 
-    protected abstract void closeInternal(Sender sender)
-            throws IOException;
+    protected abstract void closeInternal();
 
     public abstract long getAllocatedSize();
 

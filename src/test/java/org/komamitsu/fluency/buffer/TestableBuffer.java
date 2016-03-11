@@ -4,6 +4,7 @@ import org.komamitsu.fluency.sender.Sender;
 import org.komamitsu.fluency.util.Tuple3;
 
 import java.io.IOException;
+import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -21,6 +22,11 @@ public class TestableBuffer
     private TestableBuffer(Config bufferConfig)
     {
         super(bufferConfig);
+    }
+
+    @Override
+    protected void loadBuffer(List<String> params, ByteBuffer buffer)
+    {
     }
 
     @Override
@@ -45,14 +51,13 @@ public class TestableBuffer
     }
 
     @Override
-    public String bufferType()
+    public String bufferFormatType()
     {
         return "test";
     }
 
     @Override
-    protected void closeInternal(Sender sender)
-            throws IOException
+    protected void closeInternal()
     {
         closeCount.incrementAndGet();
     }

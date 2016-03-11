@@ -11,6 +11,7 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.Arrays;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.LinkedBlockingQueue;
@@ -23,13 +24,24 @@ public class MessageBuffer
     private static final Logger LOG = LoggerFactory.getLogger(MessageBuffer.class);
     private final AtomicInteger allocatedSize = new AtomicInteger();
     private final LinkedBlockingQueue<ByteBuffer> messages = new LinkedBlockingQueue<ByteBuffer>();
-    private final ObjectMapper objectMapper = new ObjectMapper(new MessagePackFactory());
-    private final ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
     private final Object bufferLock = new Object();
 
     private MessageBuffer(MessageBuffer.Config bufferConfig)
     {
         super(bufferConfig);
+    }
+
+    private void loadDataToMessages(ByteBuffer src)
+            throws IOException
+    {
+        synchronized (bufferLock) {
+            if (allocatedSize.get() + src.remaining() > bufferConfig.getMaxBufferSize()) {
+                throw new BufferFullException("Buffer is full. bufferConfig=" + bufferConfig + ", allocatedSize=" + allocatedSize);
+            }
+            int position = src.position();
+            messages.add(src);
+            allocatedSize.getAndAdd(position - src.remaining());
+        }
     }
 
     @Override
@@ -51,19 +63,27 @@ public class MessageBuffer
             packedBytes[0] = (byte)0x94;
         }
 
-        // TODO: Refactoring
-        synchronized (bufferLock) {
-            if (allocatedSize.get() + packedBytes.length > bufferConfig.getMaxBufferSize()) {
-                throw new BufferFullException("Buffer is full. bufferConfig=" + bufferConfig + ", allocatedSize=" + allocatedSize);
-            }
-            ByteBuffer byteBuffer = ByteBuffer.wrap(packedBytes);
-            messages.add(byteBuffer);
-            allocatedSize.getAndAdd(packedBytes.length);
+        loadDataToMessages(ByteBuffer.wrap(packedBytes));
+    }
+
+    @Override
+    protected void loadBuffer(List<String> params, ByteBuffer buffer)
+    {
+        if (params.size() != 1) {
+            throw new IllegalArgumentException("The number of params should be 1: params=" + params);
+        }
+        // params.get(0) is timestamp
+
+        try {
+            loadDataToMessages(buffer);
+        }
+        catch (Exception e) {
+            LOG.error("Failed to load data to messages: params={}, buffer={}", params, buffer);
         }
     }
 
     @Override
-    public String bufferType()
+    public String bufferFormatType()
     {
         return FORMAT_TYPE;
     }
@@ -89,8 +109,7 @@ public class MessageBuffer
     }
 
     @Override
-    public void closeInternal(Sender sender)
-            throws IOException
+    protected void closeInternal()
     {
         messages.clear();
     }

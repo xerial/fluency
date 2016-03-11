@@ -13,6 +13,7 @@ import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.LinkedBlockingQueue;
@@ -69,6 +70,54 @@ public class PackedForwardBuffer
         return newBuffer;
     }
 
+    private void loadDataToRetentionBuffers(String tag, ByteBuffer src)
+            throws IOException
+    {
+        synchronized (retentionBuffers) {
+            RetentionBuffer buffer = prepareBuffer(tag, src.remaining());
+            buffer.getByteBuffer().put(src);
+            buffer.getLastUpdatedTimeMillis().set(System.currentTimeMillis());
+            moveRetentionBufferIfNeeded(tag, buffer);
+        }
+    }
+
+    private void loadDataToFlushableBuffers(String tag, ByteBuffer src)
+            throws IOException, InterruptedException
+    {
+        flushableBuffers.put(new TaggableBuffer(tag, src));
+    }
+
+    @Override
+    protected void loadBuffer(List<String> params, ByteBuffer buffer)
+    {
+        if (params.size() != 3) {
+            throw new IllegalArgumentException("The number of params should be 3: params=" + params);
+        }
+        String bufferType = params.get(0);
+        String tag = params.get(1);
+        // params.get(2) is timestamp
+
+        if (bufferType.equals("0")) {   // 0: flushableBuffers
+            try {
+                loadDataToFlushableBuffers(tag, buffer);
+            }
+            catch (Exception e) {
+                LOG.error("Failed to load data to flushableBuffers: params={}, buffer={}", params, buffer);
+            }
+        }
+        else if (bufferType.equals("1")) {  // 1: retentionBuffers
+            try {
+                loadDataToRetentionBuffers(tag, buffer);
+            }
+            catch (Exception e) {
+                LOG.error("Failed to load data to retentionBuffers: params={}, buffer={}", params, buffer);
+            }
+        }
+        else {
+            LOG.error("Unexpected bufferType: params={}, buffer={}", params, buffer);
+        }
+    }
+
     @Override
     public void append(String tag, long timestamp, Map<String, Object> data)
             throws IOException
@@ -79,12 +128,7 @@ public class PackedForwardBuffer
         objectMapper.writeValue(outputStream, Arrays.asList(timestamp, data));
         outputStream.close();
 
-        synchronized (retentionBuffers) {
-            RetentionBuffer buffer = prepareBuffer(tag, outputStream.size());
-            buffer.getByteBuffer().put(outputStream.toByteArray());
-            buffer.getLastUpdatedTimeMillis().set(System.currentTimeMillis());
-            moveRetentionBufferIfNeeded(tag, buffer);
-        }
+        loadDataToRetentionBuffers(tag, ByteBuffer.wrap(outputStream.toByteArray()));
     }
 
     private void moveRetentionBufferIfNeeded(String tag, RetentionBuffer buffer)
@@ -126,7 +170,7 @@ public class PackedForwardBuffer
     }
 
     @Override
-    public String bufferType()
+    public String bufferFormatType()
     {
         return FORMAT_TYPE;
     }
@@ -175,12 +219,9 @@ public class PackedForwardBuffer
     }
 
     @Override
-    public synchronized void closeInternal(Sender sender)
-            throws IOException
+    protected synchronized void closeInternal()
     {
-        moveRetentionBuffersToFlushable(true);
         retentionBuffers.clear();
-        flush(sender, true);
         bufferPool.releaseBuffers();
     }
 
@@ -213,7 +254,7 @@ public class PackedForwardBuffer
         @Override
         public String toString()
         {
-            return "ExpirableBuffer{" +
+            return "RetentionBuffer{" +
                     "lastUpdatedTimeMillis=" + lastUpdatedTimeMillis +
                     ", byteBuffer=" + byteBuffer +
                     '}';
