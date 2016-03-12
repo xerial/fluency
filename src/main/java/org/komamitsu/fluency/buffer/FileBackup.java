@@ -9,9 +9,11 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.RandomAccessFile;
 import java.nio.ByteBuffer;
+import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -41,8 +43,10 @@ public class FileBackup
         public void open(Callback callback)
         {
             try {
-                channel = new RandomAccessFile(savedFile, "r").getChannel();
-                callback.process(params, channel.map(FileChannel.MapMode.PRIVATE, 0, savedFile.length()));
+                channel = new RandomAccessFile(savedFile, "rw").getChannel();
+                MappedByteBuffer buffer = channel.map(FileChannel.MapMode.PRIVATE, 0, savedFile.length());
+                LOG.info("Loading buffer: params={}, buffer={}", params, buffer);
+                callback.process(params, buffer);
                 success();
             }
             catch (Exception e) {
@@ -120,8 +124,9 @@ public class FileBackup
                 else {
                     String concatParams = matcher.group(1);
                     String[] params = concatParams.split(PARAM_DELIM_IN_FILENAME);
-                    List<String> paramList = Arrays.asList(params);
-                    paramList.remove(paramList.size() - 1);
+                    LinkedList<String> paramList = new LinkedList<String>(Arrays.asList(params));
+                    LOG.debug("Saved buffer params={}", paramList);
+                    paramList.removeLast();
                     savedBuffers.add(new SavedBuffer(f, paramList));
                 }
             }
@@ -131,6 +136,8 @@ public class FileBackup
 
     public void saveBuffer(List<String> params, ByteBuffer buffer)
     {
+        LOG.info("Saving buffer: params={}, buffer={}", params, buffer);
+
         backupDir.mkdir();
         params.add(String.valueOf(System.currentTimeMillis()));
 

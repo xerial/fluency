@@ -10,6 +10,7 @@ import org.slf4j.LoggerFactory;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
@@ -78,7 +79,7 @@ public class MessageBuffer
             loadDataToMessages(buffer);
         }
         catch (Exception e) {
-            LOG.error("Failed to load data to messages: params={}, buffer={}", params, buffer);
+            LOG.error("Failed to load data to messages: params=" + params + ", buffer=" + buffer, e);
         }
     }
 
@@ -86,9 +87,9 @@ public class MessageBuffer
     protected void saveAllBuffers()
             throws IOException
     {
-        ByteBuffer message = null;
+        ByteBuffer message;
         while ((message = messages.poll()) != null) {
-            saveBuffer(Collections.EMPTY_LIST, message);
+            saveBuffer(new ArrayList<String>(), message);
         }
     }
 

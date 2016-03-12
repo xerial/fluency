@@ -47,6 +47,7 @@ public abstract class Buffer<T extends Buffer.Config>
                     @Override
                     public void process(List<String> params, ByteBuffer buffer)
                     {
+                        LOG.info("Loading buffer: params={}, buffer={}", params, buffer);
                         loadBuffer(params, buffer);
                     }
                 });
@@ -88,6 +89,14 @@ public abstract class Buffer<T extends Buffer.Config>
 
     public void close()
     {
+        try {
+            LOG.info("Saving all buffers");
+            saveAllBuffers();
+        }
+        catch (Exception e) {
+            LOG.warn("Failed to save all buffers", e);
+        }
+        LOG.info("Closing buffers");
         closeInternal();
     }
 
